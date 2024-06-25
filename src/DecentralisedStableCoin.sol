@@ -42,13 +42,15 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
     //Errors
     error DecentralizedStableCoin__MustBeMoreThanZero();
     error DecentralizedStableCoin__BurnAmountExceedsBalance();
+    error DecentralizedStableCoin__NotZeroAddress();
 
     constructor()
         ERC20("DecentralizedStableCoin", "DSC")
-        Ownable(0x4aB7C05Ca6281deA5A95C40CD5B11ad0CFA5836E)
+        Ownable(0x4aB7C05Ca6281deA5A95C40CD5B11ad0CFA5836E) //ownable now needs a deployer address
     {}
 
     function burn(uint256 _amount) public override onlyOwner {
+        //burn function will help maintain the peg price
         //implementing a burn function
         uint256 balance = balanceOf(msg.sender);
         if (_amount <= 0) {
@@ -60,5 +62,22 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
             revert DecentralizedStableCoin__BurnAmountExceedsBalance();
         }
         super.burn(_amount);
+    }
+
+    function mint(
+        //mint function basically mints some quantity(_amount) to a 'to' address
+        address _to,
+        uint256 _amount
+    ) external onlyOwner returns (bool) {
+        if (_to == address(0)) {
+            //revert with the below error if minting to a zero address
+            revert DecentralizedStableCoin__NotZeroAddress();
+        }
+        if (_amount <= 0) {
+            //revert with below error if minting with amount less than or equal to zero
+            revert DecentralizedStableCoin__MustBeMoreThanZero();
+        }
+        _mint(_to, _amount);
+        return true;
     }
 }
