@@ -46,7 +46,7 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
 
     constructor()
         ERC20("DecentralizedStableCoin", "DSC")
-        Ownable(0x4aB7C05Ca6281deA5A95C40CD5B11ad0CFA5836E) //ownable now needs a deployer address
+        Ownable(msg.sender) //ownable now needs a deployer address
     {}
 
     function burn(uint256 _amount) public override onlyOwner {
