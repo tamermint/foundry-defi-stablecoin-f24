@@ -26,6 +26,8 @@
 pragma solidity ^0.8.19;
 
 import {DecentralisedStableCoin} from "./DecentralisedStableCoin.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title DSC Engine
@@ -44,20 +46,27 @@ import {DecentralisedStableCoin} from "./DecentralisedStableCoin.sol";
  * @notice This contract is core of DSC System - it handles all the logic for mining and redeeming DSC - as well as depositing and withdrawing collateral
  * @notice This contract is loosely based on MakerDAO DSS (DAI)
  */
-
-contract DSCEngine {
+contract DSCEngine is ReentrancyGuard {
     /////////////////////
     ///// Errors ////////
     /////////////////////
     error DSCEngine__CanNotBeZero();
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+    error DSCEngine__TokenNotAllowed();
+    error DSCEngine__TransferFailed();
 
     /////////////////////
     // State Variables //
     /////////////////////
     mapping(address token => address priceFeed) private s_PriceFeeds; //solidity pricefeed naming convention - new
+    mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
 
     DecentralisedStableCoin private immutable i_dsc;
+
+    /////////////////////
+    ///// Events ////////
+    /////////////////////
+    event CollateralDeposited(address indexed user, address indexed tokens, uint256 indexed amount);
 
     /////////////////////
     //// Modifiers //////
@@ -68,7 +77,11 @@ contract DSCEngine {
         }
         _;
     }
+
     modifier isAllowedToken(address token) {
+        if (s_PriceFeeds[token] == address(0)) {
+            revert DSCEngine__TokenNotAllowed();
+        }
         _;
     } //implementing a token allowlist - statemapping
 
@@ -98,14 +111,26 @@ contract DSCEngine {
     function depositCollateralAndMintDsc() external {} //deposit wBTC/wETH and get DSC
 
     /**
-     *
-     * @param depositTokenCollateralAddress The address of the token deposited as collateral - i.e. wBTC/wETH
+     * @notice follows CEI pattern - checks, effects, interactions
+     * @param tokenCollateralAddress The address of the token deposited as collateral - i.e. wBTC/wETH
      * @param amountCollateral The amount of collateral user deposits
+     * @dev using OpenZeppelin's IERC20 interface's transferFrom function
      */
-    function depositCollateral(
-        address depositTokenCollateralAddress,
-        uint256 amountCollateral
-    ) external moreThanZero(amountCollateral) {} //deposit collateral
+    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        external
+        moreThanZero(amountCollateral)
+        isAllowedToken(tokenCollateralAddress)
+        nonReentrant
+    {
+        //deposit collateral
+        s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
+        emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateral); //emit event when state is updated
+            //now transfer this amount to this contract using IERC20
+        bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+    }
 
     function redeemCollateralForDsc() external {} //redeem wBTC/wETH by depositing the DSC
 
