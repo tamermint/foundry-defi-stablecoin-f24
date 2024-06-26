@@ -25,6 +25,8 @@
 
 pragma solidity ^0.8.19;
 
+import {DecentralisedStableCoin} from "./DecentralisedStableCoin.sol";
+
 /**
  * @title DSC Engine
  * @author Vivek Mitra
@@ -45,12 +47,20 @@ pragma solidity ^0.8.19;
 
 contract DSCEngine {
     /////////////////////
-    //////Errors/////////
+    ///// Errors ////////
     /////////////////////
     error DSCEngine__CanNotBeZero();
+    error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
 
     /////////////////////
-    /////Modifiers///////
+    // State Variables //
+    /////////////////////
+    mapping(address token => address priceFeed) private s_PriceFeeds; //solidity pricefeed naming convention - new
+
+    DecentralisedStableCoin private immutable i_dsc;
+
+    /////////////////////
+    //// Modifiers //////
     /////////////////////
     modifier moreThanZero(uint256 amount) {
         if (amount <= 0) {
@@ -58,14 +68,31 @@ contract DSCEngine {
         }
         _;
     }
+    modifier isAllowedToken(address token) {
+        _;
+    } //implementing a token allowlist - statemapping
 
     /////////////////////
-    /////Functions///////
+    //// Functions //////
     /////////////////////
-    constructor() {}
+    constructor(
+        address[] memory tokenAddresses, //intialize wBTC and wETH address - will be different based on diff chain
+        address[] memory priceFeedAddresses, //initialize pricefeed address - - will be different based on diff chain
+        address dscAddress //the address of our decentralised stable coin - so DSC engine can call the burn/mint function
+    ) {
+        //sanity check to ensure both the arrays have same length i.e. every token must have a corrsponding pricefeed address
+        if (tokenAddresses.length != priceFeedAddresses.length) {
+            revert DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
+        }
+        //now map token address to respective pricefeed address
+        for (uint256 i = 0; i < tokenAddresses.length; i++) {
+            s_PriceFeeds[tokenAddresses[i]] = priceFeedAddresses[i]; //token at i = has pricefeed at i
+        }
+        i_dsc = DecentralisedStableCoin(dscAddress); //get instance of the stabelocing contract and set it to the i_dsc variable
+    }
 
     ///////////////////////////
-    ///External Functions/////
+    // External Functions ////
     /////////////////////////
 
     function depositCollateralAndMintDsc() external {} //deposit wBTC/wETH and get DSC
