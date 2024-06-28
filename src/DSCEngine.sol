@@ -56,6 +56,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenNotAllowed();
     error DSCEngine__TransferFailed();
     error DSCEngine__BreaksHealthFactor(uint256 healthFactor);
+    error DSCEngine__MintFailed();
 
     /////////////////////
     // State Variables //
@@ -155,8 +156,13 @@ contract DSCEngine is ReentrancyGuard {
     function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
         //1. check if colllatera value > dsc amount
         s_DSCMinted[msg.sender] += amountDscToMint;
-        _revertIfHealthFactorIsBroken(msg.sender); //this will be an intertnal function to check if they can borrow dsc
-    } //mint the DSC
+        _revertIfHealthFactorIsBroken(msg.sender); //this will be an internal function to check if they can borrow dsc otherwise revert
+        //mint the DSC
+        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        if (!minted) {
+            revert DSCEngine__MintFailed();
+        }
+    }
 
     function burnDsc() external {} //burn DSC if people feel that they don't have enough collateral backing their DSC so they can burn DSC
 
