@@ -14,3 +14,23 @@
 ## Project Changes
 
 - ERC20 mock contract needed to be installed - OpenZeppelin has had changes and no longer accepts 4 constructors
+  old :
+
+```solidity
+contract ERC20Mock is ERC20 {
+    constructor(string memory name, string memory symbol, address initialAccount, uint256 initialBalance)
+        payable
+        ERC20(name, symbol)
+    {
+        _mint(initialAccount, initialBalance);
+    }
+    ...}
+```
+
+new :
+
+```solidity
+    contract ERC20Mock is ERC20 {
+    constructor() ERC20("ERC20Mock", "E20M") {}
+    ...}
+```
