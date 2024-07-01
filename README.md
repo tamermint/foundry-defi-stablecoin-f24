@@ -10,3 +10,7 @@
 - Collateral type - Exogenous (Crypto Collateral)
   - wETH
   - wBTC
+
+## Project Changes
+
+- ERC20 mock contract needed to be installed - OpenZeppelin has had changes and no longer accepts 4 constructors
