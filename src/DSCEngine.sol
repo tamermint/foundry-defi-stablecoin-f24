@@ -113,7 +113,7 @@ contract DSCEngine is ReentrancyGuard {
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i]; //token at i = has pricefeed at i
             s_collateralTokens.push(tokenAddresses[i]); //push the address of the token into this array
         }
-        i_dsc = DecentralisedStableCoin(dscAddress); //get instance of the stabelocing contract and set it to the i_dsc variable
+        i_dsc = DecentralisedStableCoin(dscAddress); //get instance of the stablecoin contract and set it to the i_dsc variable
     }
 
     ///////////////////////////
