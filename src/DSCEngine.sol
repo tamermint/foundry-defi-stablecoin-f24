@@ -57,6 +57,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TransferFailed();
     error DSCEngine__BreaksHealthFactor(uint256 healthFactor);
     error DSCEngine__MintFailed();
+    error DSCEngine__BurnFailed();
 
     /////////////////////
     // State Variables //
@@ -78,6 +79,7 @@ contract DSCEngine is ReentrancyGuard {
     ///// Events ////////
     /////////////////////
     event CollateralDeposited(address indexed user, address indexed tokens, uint256 indexed amount);
+    event CollateralRedeemed(address indexed user, address indexed tokens, uint256 indexed amount);
 
     /////////////////////
     //// Modifiers //////
@@ -119,8 +121,21 @@ contract DSCEngine is ReentrancyGuard {
     ///////////////////////////
     // External Functions ////
     /////////////////////////
-
-    function depositCollateralAndMintDsc() external {} //deposit wBTC/wETH and get DSC
+    /**
+     *
+     * @param tokenCollateralAddress address of the token deposited as collateral
+     * @param amountCollateral amount of tokens deposited
+     * @param amountDscTomint amount of dsc to mint
+     * @notice this function deposits collateral and mints dsc in one transaction
+     */
+    function depositCollateralAndMintDsc(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        uint256 amountDscTomint
+    ) external {
+        depositCollateral(tokenCollateralAddress, amountCollateral);
+        mintDsc(amountDscTomint);
+    } //deposit wBTC/wETH and get DSC
 
     /**
      * @notice follows CEI pattern - checks, effects, interactions
@@ -129,7 +144,7 @@ contract DSCEngine is ReentrancyGuard {
      * @dev using OpenZeppelin's IERC20 interface's transferFrom function
      */
     function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
-        external
+        public
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
         nonReentrant
@@ -144,16 +159,47 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function redeemCollateralForDsc() external {} //redeem wBTC/wETH by depositing the DSC
+    /**
+     *
+     * @param tokenCollaterAddress The token address that user wants to withdraw as collateral
+     * @param amountToBurn amount of dsc tokens to burn
+     * @param amountCollateral amount of of the tokenCollateral address user wants to withdraw
+     */
+    function redeemCollateralForDsc(address tokenCollaterAddress, uint256 amountToBurn, uint256 amountCollateral)
+        external
+    {
+        //burn dsc
+        burnDsc(amountToBurn);
+        //redeem collateral
+        redeemCollateral(tokenCollaterAddress, amountCollateral);
+    } //redeem wBTC/wETH by depositing the DSC
 
-    function redeemCollateral() external {} //redeem collateral
+    /**
+     * @notice this function enables user to withdraw collateral
+     * @notice need to check if health factor is 1 after collateral pull
+     */
+    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        public
+        moreThanZero(amountCollateral)
+        nonReentrant
+    {
+        s_collateralDeposited[msg.sender][tokenCollateralAddress] -= amountCollateral; //update our ledger
+        emit CollateralRedeemed(msg.sender, tokenCollateralAddress, amountCollateral);
+        //usually you would think to check healthfactor first and then check whether to transfer balance but this is gas inefficient
+        //so we violate CEI a bit, we first transfer tokens, and then if violate hf, we revert
+        bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        _revertIfHealthFactorIsBroken(msg.sender);
+    } //redeem collateral
 
     /**
      * @notice Follows the CEI pattern
      * @param amountDscToMint The amount of decentralis0ed stablecoin to mint
      * @notice They must have more collateral than dsc
      */
-    function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
+    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
         //1. check if colllatera value > dsc amount
         s_DSCMinted[msg.sender] += amountDscToMint;
         _revertIfHealthFactorIsBroken(msg.sender); //this will be an internal function to check if they can borrow dsc otherwise revert
@@ -164,7 +210,16 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function burnDsc() external {} //burn DSC if people feel that they don't have enough collateral backing their DSC so they can burn DSC
+    function burnDsc(uint256 amount) public moreThanZero(amount) {
+        s_DSCMinted[msg.sender] -= amount;
+        bool burned = i_dsc.transferFrom(msg.sender, address(this), amount);
+        if (!burned) {
+            //hypothetically unreachable because transferfrom will throw the error if it fails
+            revert DSCEngine__BurnFailed();
+        }
+        i_dsc.burn(amount);
+        _revertIfHealthFactorIsBroken(msg.sender);
+    } //burn DSC if people feel that they don't have enough collateral backing their DSC so they can burn DSC
 
     function liquidate() external {} //externals can call to save the protocol - by liquidating users positions - users can't hold same position if value of underlying collateral falls
 
