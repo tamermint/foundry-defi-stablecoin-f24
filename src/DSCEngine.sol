@@ -58,6 +58,8 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BreaksHealthFactor(uint256 healthFactor);
     error DSCEngine__MintFailed();
     error DSCEngine__BurnFailed();
+    error DSCEngine__HealthFactorOkay();
+    error DSCEngine__HealthFactorNotImproved();
 
     /////////////////////
     // State Variables //
@@ -66,7 +68,8 @@ contract DSCEngine is ReentrancyGuard {
     uint256 private constant PRECISION = 1e18;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; //to ensure the protocol is always overcollateralized
     uint256 private constant LIQUIDATION_PRECISION = 100;
-    uint256 private constant MIN_HEALTH_FACTOR = 1;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
+    uint256 private constant LIQUIDATION_BONUS = 10;
 
     mapping(address token => address priceFeed) private s_priceFeeds; //solidity pricefeed naming convention - new
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited; //mapping to store the collateral deposited
@@ -79,7 +82,9 @@ contract DSCEngine is ReentrancyGuard {
     ///// Events ////////
     /////////////////////
     event CollateralDeposited(address indexed user, address indexed tokens, uint256 indexed amount);
-    event CollateralRedeemed(address indexed user, address indexed tokens, uint256 indexed amount);
+    event CollateralRedeemed(
+        address indexed redeemedFrom, address indexed redeemedTo, address indexed tokens, uint256 amount
+    );
 
     /////////////////////
     //// Modifiers //////
@@ -183,14 +188,7 @@ contract DSCEngine is ReentrancyGuard {
         moreThanZero(amountCollateral)
         nonReentrant
     {
-        s_collateralDeposited[msg.sender][tokenCollateralAddress] -= amountCollateral; //update our ledger
-        emit CollateralRedeemed(msg.sender, tokenCollateralAddress, amountCollateral);
-        //usually you would think to check healthfactor first and then check whether to transfer balance but this is gas inefficient
-        //so we violate CEI a bit, we first transfer tokens, and then if violate hf, we revert
-        bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
-        if (!success) {
-            revert DSCEngine__TransferFailed();
-        }
+        _redeemCollateral(tokenCollateralAddress, amountCollateral, msg.sender, msg.sender);
         _revertIfHealthFactorIsBroken(msg.sender);
     } //redeem collateral
 
@@ -211,23 +209,84 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     function burnDsc(uint256 amount) public moreThanZero(amount) {
-        s_DSCMinted[msg.sender] -= amount;
-        bool burned = i_dsc.transferFrom(msg.sender, address(this), amount);
-        if (!burned) {
-            //hypothetically unreachable because transferfrom will throw the error if it fails
-            revert DSCEngine__BurnFailed();
-        }
-        i_dsc.burn(amount);
+        _burnDsc(amount, msg.sender, msg.sender);
         _revertIfHealthFactorIsBroken(msg.sender);
     } //burn DSC if people feel that they don't have enough collateral backing their DSC so they can burn DSC
 
-    function liquidate() external {} //externals can call to save the protocol - by liquidating users positions - users can't hold same position if value of underlying collateral falls
+    //if someone's position is undercollateralized, we will pay you to liquidate them
+    //burn the amount of dsc and give collateral to liquidator
+    /**
+     *
+     * @param collateral The erc20 token address to liquidate from the user
+     * @param user address of the user to be liquidated i.e. the user has broken the health factor requirment - below $50
+     * @param debtToCover amount of debt to cover
+     * @notice Able to partially liquidate
+     * @notice Liquidation bonus for taking the user's funds
+     * @notice function assumes protocol is 200% overcollateralized e.g. if 75$ woth of eth is backing $50 of dsc, if eth drops to 20, liquidators wouldn't want to pay 50 to get back 20 so protocol always has to be overcollateralized
+     * @notice A known bug would be if protocol was 100% or less collaterized , then we would't be able to incentivize liquidators
+     */
+    function liquidate(address collateral, address user, uint256 debtToCover)
+        external
+        moreThanZero(debtToCover)
+        nonReentrant
+    {
+        //check healthfactor of user
+        uint256 startingHealthFactor = _healthFactor(user);
+        if (startingHealthFactor >= MIN_HEALTH_FACTOR) {
+            revert DSCEngine__HealthFactorOkay();
+        }
+        //else, burn dsc and tke collateral
+        //Bad user: $140 Eth : $100 DSC - HF is below 1
+        //need to pay back 100$ of DSC --> this is how much eth?
+        uint256 tokenAmountFromDebtCovered = getTokenAmountFromUsd(collateral, debtToCover);
+        //here, we take the $100 - using the debtToCover and then we get the amount of eth -> so if $100 of DSC -> converts to $100 usd/ $2000 usd (the price of eth) = 0.05 eth is needed to cover teh $100 dsc debt
+        //here we are also giving them a 10% bonus, to incentivize them -> so they get $110 worth of eth
+        //(0.05Eth * 10) / 100 = 0.5 / 100 = 0.005 + 0.05 = 0.055 eth
+        uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
+        uint256 totalCollateraltoRedeem = tokenAmountFromDebtCovered + bonusCollateral;
+
+        _redeemCollateral(collateral, totalCollateraltoRedeem, user, msg.sender);
+        //burn the dsc
+        _burnDsc(debtToCover, user, msg.sender);
+
+        uint256 endingUserHealthFactor = _healthFactor(user);
+        if (endingUserHealthFactor <= startingHealthFactor) {
+            revert DSCEngine__HealthFactorNotImproved();
+        }
+        //also revert all of this if the liquidator's healthfactor is broken
+        _revertIfHealthFactorIsBroken(msg.sender);
+    } //externals can call to save the protocol - by liquidating users positions - users can't hold same position if value of underlying collateral falls
 
     function getHealthFactor() external view {} //to see how healthy the positions are for specific addresses
 
     ///////////////////////////
     // Internal Functions ////
     /////////////////////////
+
+    function _burnDsc(uint256 amountDscToBurn, address onBehalfOf, address dscFrom) private {
+        s_DSCMinted[onBehalfOf] -= amountDscToBurn; //whose debt are we burning
+        bool burned = i_dsc.transferFrom(dscFrom, address(this), amountDscToBurn);
+        if (!burned) {
+            //hypothetically unreachable because transferfrom will throw the error if it fails
+            revert DSCEngine__BurnFailed();
+        }
+        i_dsc.burn(amountDscToBurn);
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
+
+    function _redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral, address from, address to)
+        private
+    {
+        s_collateralDeposited[from][tokenCollateralAddress] -= amountCollateral; //update our ledger
+        emit CollateralRedeemed(from, to, tokenCollateralAddress, amountCollateral);
+        //usually you would think to check healthfactor first and then check whether to transfer balance but this is gas inefficient
+        //so we violate CEI a bit, we first transfer tokens, and then if violate hf, we revert
+        bool success = IERC20(tokenCollateralAddress).transfer(to, amountCollateral);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     function _getAccountInformation(address user)
         private
@@ -262,6 +321,16 @@ contract DSCEngine is ReentrancyGuard {
     ///////////////////////////
     // Public view Functions /
     /////////////////////////
+
+    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256) {
+        //need to get price of ETH (token)
+        //so if eth price = $2000/Eth -> then let's say debt to cover is $1000
+        //$1000/$2000 eth/usd -> 0.5 eth so we need to divide usdAmountInWei/price of eth
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
+    }
+
     function getAccountCollateralValueInUsd(address user) public view returns (uint256 totalCollateralValueInUsd) {
         //first go through the tokens deposited, then get the amount deposited and then map it to the
         //price to get value in usd
