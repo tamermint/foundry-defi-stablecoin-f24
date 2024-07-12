@@ -33,7 +33,7 @@ contract DSCEngineTest is Test {
         (ethUsdPriceFeed, btcUsdPriceFeed, weth, wbtc,) = config.activeNetworkConfig();
         //need to mint tokens for the user so it's easy to manage
         ERC20Mock(weth).mint(USER, ERC20_STARTING_BALANCE);
-        ERC20Mock(weth).mint(ATTACKER, ERC20_STARTING_BALANCE);
+        /* ERC20Mock(weth).mint(ATTACKER, ERC20_STARTING_BALANCE);
 
         vm.prank(USER);
         ERC20Mock(weth).approve(address(dscEngine), ERC20_STARTING_BALANCE);
@@ -41,7 +41,7 @@ contract DSCEngineTest is Test {
         vm.prank(ATTACKER);
         ERC20Mock(weth).approve(address(dscEngine), ERC20_STARTING_BALANCE);
 
-        attackerContract = new MockReentrantContract(address(dscEngine), weth);
+        attackerContract = new MockReentrantContract(address(dscEngine), weth); */
     }
 
     /////////////////////////
@@ -103,7 +103,7 @@ contract DSCEngineTest is Test {
         vm.stopPrank();
     }
 
-    /* function testRevertsDueToReentrantCall() public {
+    /* function testRevertsDueToReentrantCall() public { // test didn't revert because dsc should call a contract in the first place that calls dsc. this test emulates an external contract calling dsc function
         vm.startPrank(ATTACKER);
         ERC20Mock(weth).transferInternal(ATTACKER, address(attackerContract), AMOUNT_COLLATERAL);
         ERC20Mock(weth).approveInternal(address(attackerContract), address(dscEngine), AMOUNT_COLLATERAL);
@@ -112,4 +112,21 @@ contract DSCEngineTest is Test {
         attackerContract.attack();
         vm.stopPrank();
     } */
+
+    modifier depositedCollateral() {
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dscEngine), AMOUNT_COLLATERAL);
+        dscEngine.depositCollateral(weth, AMOUNT_COLLATERAL);
+        vm.stopPrank();
+        _;
+    }
+
+    function testCanDepositCollateralAndGetAccountInfo() public depositedCollateral {
+        (uint256 totalDscMinted, uint256 collateralValueInUSD) = dscEngine.getAccountInformation(USER);
+
+        uint256 expectedDscMinted = 0;
+        uint256 expectedCollateralValueInUSD = dscEngine.getTokenAmountFromUsd(weth, collateralValueInUSD);
+        assertEq(expectedDscMinted, totalDscMinted);
+        assertEq(expectedCollateralValueInUSD, collateralValueInUSD);
+    }
 }
