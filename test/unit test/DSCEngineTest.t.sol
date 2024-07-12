@@ -125,8 +125,8 @@ contract DSCEngineTest is Test {
         (uint256 totalDscMinted, uint256 collateralValueInUSD) = dscEngine.getAccountInformation(USER);
 
         uint256 expectedDscMinted = 0;
-        uint256 expectedCollateralValueInUSD = dscEngine.getTokenAmountFromUsd(weth, collateralValueInUSD);
+        uint256 expectedDepositAmount = dscEngine.getTokenAmountFromUsd(weth, collateralValueInUSD);
         assertEq(expectedDscMinted, totalDscMinted);
-        assertEq(expectedCollateralValueInUSD, collateralValueInUSD);
+        assertEq(AMOUNT_COLLATERAL, expectedDepositAmount);
     }
 }
