@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
+/* 
+pragma solidity ^0.8.19;
 //need to ask the question - > which properties will always be true
 // What are our invariants?
 // 1. Total supply of DSC should be less than total value of collateral
@@ -44,3 +46,5 @@ contract InvariantsTest is StdInvariant, Test {
         assert(wethUsdValue + wbtcUsdValue >= totalSupply);
     }
 }
+we are not using this test because this doesn't employ any handlers
+ */
