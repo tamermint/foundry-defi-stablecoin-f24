@@ -11,6 +11,7 @@ contract Handler is Test {
     DecentralisedStableCoin public dsc;
     ERC20Mock weth;
     ERC20Mock wbtc;
+    uint256 MAX_DEPOSIT_SIZE = type(uint96).max;
 
     constructor(DSCEngine _dsce, DecentralisedStableCoin _dsc) {
         dsce = _dsce;
@@ -19,9 +20,6 @@ contract Handler is Test {
         address[] memory collateralTokens = dsce.getCollateralTokens();
         weth = ERC20Mock(collateralTokens[0]);
         wbtc = ERC20Mock(collateralTokens[1]);
-
-        weth.mint(address(this), 1000 * 10e18);
-        wbtc.mint(address(this), 1000 * 10e18);
     }
 
     //redeem collateral
@@ -31,15 +29,13 @@ contract Handler is Test {
         collateral.approve(address(dsce), amountCollateral);
         dsce.depositCollateral(address(collateral), amountCollateral); */
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+        amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE);
 
-        console.log("Balance before deposit: ", collateral.balanceOf(msg.sender));
-        console.log("Allowance before deposit: ", collateral.allowance(msg.sender, address(dsce)));
-
+        vm.startPrank(msg.sender);
+        collateral.mint(msg.sender, amountCollateral);
         collateral.approve(address(dsce), amountCollateral);
         dsce.depositCollateral(address(collateral), amountCollateral);
-
-        console.log("Balance after deposit: ", collateral.balanceOf(msg.sender));
-        console.log("Allowance after deposit: ", collateral.allowance(msg.sender, address(dsce)));
+        vm.stopPrank();
     }
 
     //Helper functions
