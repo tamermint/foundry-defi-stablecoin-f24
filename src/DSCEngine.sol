@@ -314,7 +314,7 @@ contract DSCEngine is ReentrancyGuard {
         pure
         returns (uint256)
     {
-        if (totalDscMinted == 0) return type(uint256).max; //so to make sure that healthfactor is the result of / by zero
+        if (totalDscMinted == 0) return type(uint256).max; //so to make sure that healthfactor is not the result of / by zero
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
         return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
     }
@@ -364,6 +364,10 @@ contract DSCEngine is ReentrancyGuard {
         returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
     {
         (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
+    }
+
+    function getCollateralBalanceOfUser(address user, address token) external view returns (uint256) {
+        return s_collateralDeposited[user][token];
     }
 
     function getPrecision() external pure returns (uint256) {

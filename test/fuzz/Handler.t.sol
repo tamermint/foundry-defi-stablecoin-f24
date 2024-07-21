@@ -21,6 +21,23 @@ contract Handler is Test {
         weth = ERC20Mock(collateralTokens[0]);
         wbtc = ERC20Mock(collateralTokens[1]);
     }
+    //mint
+
+    function mintDsc(uint256 amount) external {
+        //mint dsc only if amounttomint < collateral
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(msg.sender);
+        int256 maxDscToMint = (int256(collateralValueInUsd) / 2) - int256(totalDscMinted);
+        if (maxDscToMint < 0) {
+            return;
+        }
+        amount = bound(amount, 0, uint256(maxDscToMint));
+        if (amount == 0 || amount < 0) {
+            return;
+        }
+        vm.startPrank(msg.sender);
+        dsce.mintDsc(amount);
+        vm.stopPrank();
+    }
 
     //redeem collateral
     function depositCollateral(uint256 collateralSeed, uint256 amountCollateral) external {
@@ -36,6 +53,19 @@ contract Handler is Test {
         collateral.approve(address(dsce), amountCollateral);
         dsce.depositCollateral(address(collateral), amountCollateral);
         vm.stopPrank();
+    }
+
+    //redeem collateral
+    function redeemCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+        //only redeem the amount that they have as balance
+        uint256 maxCollateralToRedeem = dsce.getCollateralBalanceOfUser(msg.sender, address(collateral));
+        amountCollateral = bound(amountCollateral, 0, maxCollateralToRedeem);
+        if (amountCollateral == 0) {
+            return;
+        }
+        vm.prank(msg.sender); //not using this will cause random calls
+        dsce.redeemCollateral(address(collateral), amountCollateral);
     }
 
     //Helper functions
