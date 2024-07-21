@@ -79,3 +79,10 @@ new :
 
 
 ```
+
+- Make sure to run the following after every couple of tests :
+
+```zsh
+  forge clean
+  forge build
+```
