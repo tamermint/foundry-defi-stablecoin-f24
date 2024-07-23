@@ -41,6 +41,20 @@ contract Invariants is StdInvariant, Test {
         uint256 wethUsdValue = dsce.getUsdValue(weth, totalWethDeposited);
         uint256 wbtcUsdValue = dsce.getUsdValue(wbtc, totalWbtcDeposited);
 
+        console.log("Total weth: ", wethUsdValue);
+        console.log("Total wbtc: ", wbtcUsdValue);
+        console.log("Total supply: ", totalSupply);
+        console.log("Times mint is called: ", handler.timesMintIsCalled());
+
         assert(wethUsdValue + wbtcUsdValue >= totalSupply);
+    }
+
+    function invariants_gettersShouldNeverRevert() public view {
+        dsce.getLiquidationBonus();
+        dsce.getLiquidationPrecision();
+        dsce.getLiquidationThreshold();
+        dsce.getMinHealthFactor();
+        dsce.getPrecision();
+        dsce.getAdditionalFeedPrecision();
     }
 }
