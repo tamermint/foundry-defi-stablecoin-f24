@@ -29,6 +29,7 @@ import {DecentralisedStableCoin} from "./DecentralisedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/v0.8/interfaces/AggregatorV3Interface.sol";
+import {OracleLib} from "./OracleLib.sol";
 
 /**
  * @title DSC Engine
@@ -60,6 +61,11 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BurnFailed();
     error DSCEngine__HealthFactorOkay();
     error DSCEngine__HealthFactorNotImproved();
+
+    /////////////////////
+    // Types ////////////
+    /////////////////////
+    using OracleLib for AggregatorV3Interface;
 
     /////////////////////
     // State Variables //
@@ -335,7 +341,7 @@ contract DSCEngine is ReentrancyGuard {
         //so if eth price = $2000/Eth -> then let's say debt to cover is $1000
         //$1000/$2000 eth/usd -> 0.5 eth so we need to divide usdAmountInWei/price of eth
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
     }
 
@@ -353,7 +359,7 @@ contract DSCEngine is ReentrancyGuard {
         //using the aggregator pricefeed
         //get the price of the token in usd
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         //the returned value is 8 decimal places
         return ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
     }
